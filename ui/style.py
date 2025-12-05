@@ -7,6 +7,10 @@ class Term:
     FG_YELLOW = '\033[33m'
     BG_BLUE = '\033[44m'
     FG_WHITE = '\033[37m'
+    FG_REDF = '\033[31m'
+    FG_GREEN = '\033[32m'
+
+
     
     # 屏幕控制
     CLEAR = '\033[H\033[2J'

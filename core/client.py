@@ -17,8 +17,8 @@ class TipsClient:
             resp = self.session.get(f"{SERVER_URL}/public_key/")
             if resp.status_code != 200: return False, "Server connect error"
             pem_key = resp.json()['public_key'].encode('utf-8')
-        except:
-            return False, "Network error"
+        except Exception as e:
+            return False, f"Network error: {e}"
 
         # 2. 加密并登录
         enc_pwd = encrypt_password(password, pem_key)
@@ -151,4 +151,69 @@ class TipsClient:
             return True
         except ValueError:
             return False
+        
     
+
+
+
+    # =========== Group Actions =========== #
+    def create_group(self, name):
+        """创建群组"""
+        try:
+            resp = self.session.post(f"{SERVER_URL}/groups/create", json={"name": name})
+            if resp.status_code == 200:
+                data = resp.json()
+                return f"Group created! Invite Code: {data['invite_code']}", True
+            return f"Create failed: {resp.text}", False
+        except Exception as e:
+            return f"Error: {e}", False
+
+    def join_group(self, invite_code):
+        try:
+            resp = self.session.post(f"{SERVER_URL}/groups/join/{invite_code}")
+            if resp.status_code == 200:
+                return f"Joined group successfully!", True
+            return f"Join failed: {resp.text}", False
+        except Exception as e:
+            return f"Error: {e}", False
+
+    def list_my_groups(self):
+        """获取我的群组列表 (用于切换)"""
+        try:
+            resp = self.session.get(f"{SERVER_URL}/groups/my")
+            if resp.status_code == 200:
+                return resp.json() , False # 返回列表 [{'id':1, 'name':'...'}, ...]
+            return [], False
+        except:
+            return [], False
+    
+    def get_group_info(self, group_id):
+        try:
+            resp = self.session.get(f"{SERVER_URL}/groups/{group_id}/info")
+            
+            if resp.status_code == 200:
+                return resp.json()['members'], True
+            elif resp.status_code == 403:
+                return "You are not in this group.", False
+            else:
+                return f"Error: {resp.text}", False
+        except Exception as e:
+            return f"Network Error: {e}", False
+    
+    def set_group_admin(self, user_ids:list[int], group_id:int):
+        """设置群组管理员"""
+        try:
+            user_ids = [int(uid.strip()) for uid in user_ids.split(',') if uid.strip().isdigit()]
+            
+            if not user_ids:
+                return "Invalid user IDs", False
+
+            resp = self.session.post(f"{SERVER_URL}/groups/set_admin", json={
+                "group_id": int(group_id), # 确保是 int
+                "user_ids": user_ids
+            })
+            if resp.status_code == 200:
+                return "Admins updated successfully!", True
+            return f"Set admins failed: {resp.text}", False
+        except Exception as e:
+            return f"Error: {e}", False
