@@ -1,106 +1,164 @@
-# core/client.py
 import requests
 from config import SERVER_URL
 from datetime import datetime
 from core.crypto import encrypt_password
 
-
 class TipsClient:
     def __init__(self):
         self.session = requests.Session()
         self.current_user = None
-        self.local_cache = [] # 存储 tips 数据
         
+        # Unified cache for both private and group tips
+        self.local_cache = [] 
+        
+        # We need these placeholders so renderer.py doesn't crash
+        # (Renderer checks for these if using the split-view logic, 
+        # but we are using the unified view logic now)
+        self.current_group_id = None
+        self.current_group_name = "None"
+
     def login(self, username, password):
-        # 1. 获取公钥
         try:    
-            resp = self.session.get(f"{SERVER_URL}/public_key/")
+            resp = self.session.get(f"{SERVER_URL}/public_key/", timeout=5)
             if resp.status_code != 200: return False, "Server connect error"
             pem_key = resp.json()['public_key'].encode('utf-8')
         except Exception as e:
             return False, f"Network error: {e}"
 
-        # 2. 加密并登录
         enc_pwd = encrypt_password(password, pem_key)
-        resp = self.session.post(f"{SERVER_URL}/login/", json={
-            "username": username, "password": enc_pwd
-        })
+        try:
+            resp = self.session.post(f"{SERVER_URL}/login/", json={
+                "username": username, "password": enc_pwd
+            })
+            if resp.status_code == 200:
+                self.current_user = username
+                return True, "Login Success"
+            return False, resp.text
+        except Exception as e:
+            return False, f"Login Error: {e}"
         
-        if resp.status_code == 200 and "login successful" in resp.text:
-            self.current_user = username
-            return True, "Login Success"
-        return False, resp.text
+    def sign_up(self, username, password, invite_code):
+        try:    
+            resp = self.session.get(f"{SERVER_URL}/public_key/", timeout=5)
+            if resp.status_code != 200: return False, "Server connect error"
+            pem_key = resp.json()['public_key'].encode('utf-8')
+        except Exception as e:
+            return False, f"Network error: {e}"
+
+        enc_pwd = encrypt_password(password, pem_key)
+        try:
+            resp = self.session.post(f"{SERVER_URL}/users/signup/", json={
+                "username": username, 
+                "password": enc_pwd,
+                "invite_code": invite_code
+            })
+            if resp.status_code == 200:
+                return True, "Sign Up Success"
+            return False, resp.text
+        except Exception as e:
+            return False, f"Sign Up Error: {e}"
 
     def fetch_tips(self):
+        """
+        Fetch all tips (private + group) and merge them into local_cache.
+        """
         try:
             resp = self.session.get(f"{SERVER_URL}/show_tips/")
+            
             if resp.status_code == 200:
-                data:dict = resp.json()
-                tips = data.get('tips', [])
+                data = resp.json()
+                
+                raw_private = data.get('private_tips', [])
+                raw_public = data.get('public_tips', [])
                 maps = data.get('maps', {})
                 
-                # 重建缓存
-                new_cache = []
-                for idx, tip in enumerate(tips, 1):
-                    real_id = maps.get(str(idx)) 
-                    # 这里你可以加个防御逻辑，如果real_id找不到
-                    new_cache.append({
-                        'index': idx,
-                        'real_id': real_id,
+                self.local_cache = []
+
+                # 1. Process Private Tips
+                for tip in raw_private:
+                    self.local_cache.append({
+                        'index': tip['index'],
+                        'real_id': maps.get(str(tip['index'])), 
                         'content': tip['content'],
                         'ddl': tip['ddl'],
-                        'is_done': tip['is_done']
+                        'is_done': tip['is_done'],
+                        'type': 'PRIVATE',
+                        # 私人便签通常没有这个列表，给个空列表保持结构统一
+                        'completed_members': []
                     })
-                self.local_cache = new_cache
+
+                # 2. Process Public (Group) Tips
+                for tip in raw_public:
+                    self.local_cache.append({
+                        'index': tip['index'],
+                        'real_id': maps.get(str(tip['index'])),
+                        'content': tip['content'], 
+                        'ddl': tip['ddl'],
+                        'is_done': tip['is_done'], # 这是当前用户(你)的状态，用于打钩
+                        'type': 'GROUP',
+                        'group_name' : tip.get('group_name', 'Unknown'),
+                        'owner': tip.get('owner_name', 'Unknown'),
+                        
+                        # 【新增】这里接收后端传来的名单列表 ["Alice", "Bob"]
+                        'completed_members': tip.get('completed_members', [])
+                    })
+                
+                # Sort by index just in case
+                self.local_cache.sort(key=lambda x: x['index'])
+
+                # 获取群组ID (转为字符串以防 UI 报错)
+                self.current_group_name = str(data.get('group_id')) if data.get('group_id') else "None"
+
                 return f"Updated {len(self.local_cache)} tips.", False
-            return "Auth failed or Server error.", False
+            
+            return f"Auth failed or Server error: {resp.status_code}", False
         except Exception as e:
             return f"Network Error: {e}", False
 
-    def add_tip(self, content, ddl):
+    def add_tip(self, content, ddl , group_id:int | None=None):
         if not self._check_ddl_format(ddl):
             return "Invalid date format (YY-MM-DD HH:MM).", False
         
         try:
-            payload = {"content": content, "ddl": ddl}
-            response = self.session.post(f"{SERVER_URL}/add_tip/", json=payload)
-            if response.status_code == 200:
-                return "Tip added successfully!", True # True 表示建议刷新列表
-            return f"Add failed: {response.status_code}", False
+            # If you want to support adding to group, you need to set self.current_group_id
+            # For now, this defaults to private (group_id=None)
+            payload = {
+                "content": content, 
+                "ddl": ddl if ddl else None,
+                "group_id": group_id 
+            }
+            resp = self.session.post(f"{SERVER_URL}/add_tip/", json=payload)
+            if resp.status_code == 200:
+                return "Tip added successfully!", True
+            return f"Add failed: {resp.status_code}", False
         except Exception as e:
             return f"Error: {str(e)}", False
+        
+    
 
-    def delete_tips(self, input_str: str):
-        """解析输入并删除"""
-        if not self.local_cache:
-            return "No tips locally to delete.", False
+    def delete_tips(self, input_str: str , group_id:int | None=None):
+        if not self.local_cache: return "No tips locally.", False
         try:
-            # 解析输入 "1,2,5"
             indexes = set()
             parts = input_str.split(',')
-            max_idx = len(self.local_cache)
-            
             for part in parts:
-                part = part.strip()
-                if part.isdigit():
-                    val = int(part)
-                    if 1 <= val <= max_idx:
-                        indexes.add(val)
+                if part.strip().isdigit():
+                    indexes.add(int(part.strip()))
             
-            if not indexes:
-                return "No valid indexes provided.", False
+            if not indexes: return "No valid indexes.", False
 
-            # 找到对应的真实 ID
             real_ids = []
             for item in self.local_cache:
                 if item['index'] in indexes:
                     real_ids.append(item['real_id'])
             
-            if not real_ids:
-                return "Could not map indexes to Real IDs.", False
+            if not real_ids: return "Could not map to Real IDs.", False
 
-            # 发送请求
-            response = self.session.post(f"{SERVER_URL}/delete_tips/", json={"tips_ids": real_ids})
+            # Backend expects 'delete_ids' list
+            response = self.session.post(f"{SERVER_URL}/delete_tips/", json={
+                "tips_ids": real_ids,
+                "group_id": group_id
+            })
             if response.status_code == 200:
                 return f"Deleted {len(real_ids)} tips.", True
             return f"Delete failed: {response.text}", False
@@ -108,41 +166,29 @@ class TipsClient:
         except Exception as e:
             return f"Delete Error: {str(e)}", False
         
-    def change_tip_state(self,input_str: str):
-        if not self.local_cache:
-            return "No tips locally to change.", False
+    def change_tip_state(self, input_str: str):
+        if not self.local_cache: return "No tips locally.", False
         try:
-            # 解析输入 "1,2,5"
             indexes = set()
-            parts = input_str.split(',')
-            max_idx = len(self.local_cache)
-            
+            parts = input_str.split(',') 
             for part in parts:
-                part = part.strip()
-                if part.isdigit():
-                    val = int(part)
-                    if 1 <= val <= max_idx:
-                        indexes.add(val)
+                if part.strip().isdigit():
+                    indexes.add(int(part.strip()))
             
-            if not indexes:
-                return "No valid indexes provided.", False
-
-            # 找到对应的真实 ID
             real_ids = []
             for item in self.local_cache:
                 if item['index'] in indexes:
                     real_ids.append(item['real_id'])
             
-            if not real_ids:
-                return "Could not map indexes to Real IDs.", False
+            if not real_ids: return "No valid IDs.", False
 
-            # 发送请求
+            # Key is 'tips_ids' per your backend
             response = self.session.post(f"{SERVER_URL}/change_tip_state/", json={"tips_ids": real_ids})
             if response.status_code == 200:
-                return f"Changed state of {len(real_ids)} tips.", True
-            return f"Change state failed: {response.text}", False
+                return f"Changed state.", True
+            return f"Failed: {response.text}", False
         except Exception as e:
-            return f"Change State Error: {str(e)}", False
+            return f"Error: {str(e)}", False
 
     def _check_ddl_format(self, ddl_str):
         try:
@@ -151,69 +197,61 @@ class TipsClient:
             return True
         except ValueError:
             return False
-        
-    
 
-
-
-    # =========== Group Actions =========== #
+    # === Group Actions ===
     def create_group(self, name):
-        """创建群组"""
         try:
             resp = self.session.post(f"{SERVER_URL}/groups/create", json={"name": name})
             if resp.status_code == 200:
-                data = resp.json()
-                return f"Group created! Invite Code: {data['invite_code']}", True
-            return f"Create failed: {resp.text}", False
-        except Exception as e:
-            return f"Error: {e}", False
+                return f"Created! Code: {resp.json()['invite_code']}", True
+            return f"Failed: {resp.text}", False
+        except Exception as e: return f"Error: {e}", False
 
     def join_group(self, invite_code):
         try:
+            # Fixed URL construction
             resp = self.session.post(f"{SERVER_URL}/groups/join/{invite_code}")
             if resp.status_code == 200:
                 return f"Joined group successfully!", True
             return f"Join failed: {resp.text}", False
-        except Exception as e:
-            return f"Error: {e}", False
+        except Exception as e: return f"Error: {e}", False
 
     def list_my_groups(self):
-        """获取我的群组列表 (用于切换)"""
         try:
             resp = self.session.get(f"{SERVER_URL}/groups/my")
             if resp.status_code == 200:
-                return resp.json() , False # 返回列表 [{'id':1, 'name':'...'}, ...]
+                # Backend returns {"groups": [...]}
+                return resp.json().get('groups', []), False 
             return [], False
-        except:
-            return [], False
+        except: return [], False
     
     def get_group_info(self, group_id):
         try:
-            resp = self.session.get(f"{SERVER_URL}/groups/{group_id}/info")
-            
+            # Fixed URL: /members instead of /info
+            resp = self.session.get(f"{SERVER_URL}/groups/{group_id}/members")
             if resp.status_code == 200:
                 return resp.json()['members'], True
-            elif resp.status_code == 403:
-                return "You are not in this group.", False
-            else:
-                return f"Error: {resp.text}", False
-        except Exception as e:
-            return f"Network Error: {e}", False
+            return f"Error: {resp.text}", False
+        except Exception as e: return f"Network Error: {e}", False
     
-    def set_group_admin(self, user_ids:list[int], group_id:int):
-        """设置群组管理员"""
+    def set_group_admin(self, group_id: int, user_ids: list):
         try:
-            user_ids = [int(uid.strip()) for uid in user_ids.split(',') if uid.strip().isdigit()]
-            
-            if not user_ids:
-                return "Invalid user IDs", False
-
+            if not user_ids: return "Invalid user IDs", False
             resp = self.session.post(f"{SERVER_URL}/groups/set_admin", json={
-                "group_id": int(group_id), # 确保是 int
+                "group_id": group_id,
                 "user_ids": user_ids
             })
-            if resp.status_code == 200:
-                return "Admins updated successfully!", True
-            return f"Set admins failed: {resp.text}", False
-        except Exception as e:
-            return f"Error: {e}", False
+            if resp.status_code == 200: return "Admins updated!", True
+            return f"Failed: {resp.text}", False
+        except Exception as e: return f"Error: {e}", False
+
+    # === Context Switching ===
+    def enter_group(self, group_id):
+        """Set context to a specific group so Add Tip goes there"""
+        self.current_group_id = int(group_id)
+        return f"Context switched to Group {group_id}" , True
+
+    def exit_group(self):
+        """Set context back to private"""
+        self.current_group_id = None
+        return "Context switched to Private"

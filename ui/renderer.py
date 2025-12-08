@@ -6,163 +6,252 @@ from rich.panel import Panel
 from rich import box
 from rich.text import Text
 
+# =============================================================================
+# 1. 样式配置区 (UI_CONFIG) - 想改样式？改这里！
+# =============================================================================
+UI_CONFIG = {
+    # --- 颜色主题 ---
+    "theme": {
+        "header_bg": "blue",          # 顶部标题背景
+        "header_fg": "bold white",    # 顶部标题文字
+        "user_highlight": "bold cyan",# 用户名高亮
+        
+        "border_private": "blue",     # 私人便签边框颜色
+        "border_group": "magenta",    # 群组便签边框颜色
+
+        "table_header": "bold yellow",   # 表头颜色
+
+        
+        # DDL 状态颜色
+        "status_overdue": "bold red",    # 超时
+        "status_urgent": "bold yellow",  # 24小时内
+        "status_future": "green",        # 未来
+        "status_done": "dim green",      # 已完成
+        "status_none": "dim white",      # 无日期
+        
+        # 文字内容颜色
+        "content_sender": "bold cyan",   # 群消息发送者名字
+        "content_meta": "italic cyan",    # "Done: ..." 那行小字
+        
+    },
+
+    # --- 图标 ---
+    "icons": {
+        "done": "[bold green]✔[/]",      # 已完成图标
+        "todo": "[dim]◻[/]",        # 未完成图标
+        "unknown": "-",
+    },
+
+    # --- 布局参数 ---
+    "layout": {
+        "width": 80,            # 整体宽度
+        "max_rows": 8,          # 面板最大显示行数
+        "col_id_width": 4,      # ID列宽度
+        "col_ddl_width": 16,    # 时间列宽度
+        "col_done_width": 4,    # 状态列宽度
+    }
+}
+
 # 初始化 Rich
 console = Console()
-UI_WIDTH = 80 
+
+# =============================================================================
+# 2. 辅助逻辑函数
+# =============================================================================
 
 def clear_screen():
     console.clear()
 
-def get_ddl_style(raw_ddl, is_done):
-    """辅助函数：计算 DDL 颜色"""
+def parse_ddl(raw_ddl):
+    """尝试解析时间格式，返回 datetime 对象或 None"""
     if not raw_ddl:
-        return "None", "dim white"
+        return None
     
-    ddl_dt = None
-    try:
-        # 尝试兼容多种格式
-        if "T" in raw_ddl:
-            ddl_dt = datetime.fromisoformat(raw_ddl)
-        else:
-            ddl_dt = datetime.strptime(raw_ddl, '%y-%m-%d %H:%M')
-    except ValueError:
-        return raw_ddl, "dim white"
+    # 优先尝试 ISO 格式
+    if "T" in raw_ddl:
+        try:
+            return datetime.fromisoformat(raw_ddl)
+        except ValueError:
+            pass
+
+    formats = [
+        '%y-%m-%d %H:%M', '%Y-%m-%d %H:%M', 
+        '%Y-%m-%d %H:%M:%S', '%y-%m-%d %H:%M:%S', '%Y-%m-%d'
+    ]
+    
+    for fmt in formats:
+        try:
+            return datetime.strptime(raw_ddl, fmt)
+        except ValueError:
+            continue
+    return None
+
+def get_status_style_key(ddl_dt, is_done):
+    """根据时间和状态，返回 UI_CONFIG 中的颜色键名"""
+    if is_done:
+        return "status_done"
+    
+    if ddl_dt is None:
+        return "status_none"
 
     now = datetime.now()
-    if is_done:
-        return raw_ddl, "dim green"
-    
     if ddl_dt < now:
-        return raw_ddl, "bold red"
+        return "status_overdue"
     elif ddl_dt < now + timedelta(days=1):
-        return raw_ddl, "bold yellow"
-    
-    return raw_ddl, "green"
-
-def create_list_panel(title, tips_list, is_focused, border_color):
-    """绘制列表面板"""
-    # 动态边框样式
-    if is_focused:
-        border_style = f"bold {border_color}"
-        title_style = f"bold {border_color}"
+        return "status_urgent"
     else:
-        border_style = "dim white"
-        title_style = "dim white"
+        return "status_future"
 
-    table = Table(box=None, expand=True, padding=(0, 1), show_header=True, header_style=title_style)
+def format_group_content(item):
+    """处理群组便签的显示文本（发送者 + 内容 + 完成名单）"""
+    content = item.get('content', '')
+    owner = item.get('owner', 'Unknown')
     
-    table.add_column("ID", justify="left", width=4, style="cyan")
-    table.add_column("DDL", justify="left", width=16)
-    table.add_column("Done", justify="center", width=6)
+    # 1. 拼装第一行：[Alice]: 做实验
+    sender_style = UI_CONFIG['theme']['content_sender']
+    display_text = f"[{sender_style}]{owner}[/]: {content}"
+
+    # 2. 拼装第二行：完成者名单
+    comps = item.get('completed_members', [])
+    if comps:
+        joined = ", ".join(comps)
+        # 简单截断防止太长
+        if len(joined) > 30:
+            joined = joined[:28] + "..."
+        
+        meta_style = UI_CONFIG['theme']['content_meta']
+        display_text += f"\n[{meta_style}]  ↳ Done: {joined}[/]"
+        
+    return display_text
+
+# =============================================================================
+# 3. 组件渲染函数
+# =============================================================================
+
+def create_list_panel(title, tips_list, border_color):
+    """绘制通用的列表面板"""
+    layout = UI_CONFIG["layout"]
+    icons = UI_CONFIG["icons"]
+    theme = UI_CONFIG["theme"]
+
+    # 表格初始化
+    table = Table(
+        box=None, 
+        expand=True, 
+        padding=(0, 1), 
+        show_header=True, 
+        header_style=theme["table_header"]
+    )
+    
+    table.add_column("ID", justify="left", width=layout["col_id_width"], style="cyan")
+    table.add_column("DDL", justify="left", width=layout["col_ddl_width"])
+    table.add_column("Done", justify="center", width=layout["col_done_width"])
     table.add_column("Content", justify="left", style="white")
 
-    MAX_ROWS = 5
-    
     if not tips_list:
         table.add_row("-", "-", "-", "[dim]No tips available[/dim]")
-    else:
-        for item in tips_list[:MAX_ROWS]:
-            # 兼容处理：确保 item 是字典
-            c = item.get('content', '')
-            if len(c) > 35: c = c[:32] + "..."
-            
-            raw_ddl = item.get('ddl')
-            is_done = item.get('is_done', False)
-            idx = str(item.get('index', '?'))
+        return Panel(table, title=f"[bold {border_color}]{title}[/]", border_style=f"bold {border_color}", box=box.ROUNDED, width=layout["width"])
 
-            ddl_str, ddl_style = get_ddl_style(raw_ddl, is_done)
-            icon = "✅" if is_done else "❌"
-            
-            table.add_row(idx, f"[{ddl_style}]{ddl_str}[/]", icon, c)
+    # 遍历数据
+    for item in tips_list[:layout["max_rows"]]:
+        # A. 准备数据
+        raw_ddl = item.get('ddl')
+        is_done = item.get('is_done', False)
+        idx = str(item.get('index', '?'))
+        is_group = (item.get('type') == 'GROUP')
+
+        # B. 计算样式
+        ddl_dt = parse_ddl(raw_ddl)
+        style_key = get_status_style_key(ddl_dt, is_done)
+        color_tag = theme[style_key] # 从配置获取颜色 (如 "bold red")
         
-        if len(tips_list) > MAX_ROWS:
-            rest = len(tips_list) - MAX_ROWS
-            table.add_row("...", "...", "...", f"[dim]... and {rest} more ...[/]")
+        # C. 准备内容列
+        if is_group:
+            content_display = format_group_content(item)
+        else:
+            # 私人内容简单截断
+            c = item.get('content', '')
+            if len(c) > 38: c = c[:35] + "..."
+            content_display = c
+
+        # D. 准备图标
+        icon = icons["done"] if is_done else icons["todo"]
+        
+        # E. 填充表格
+        # 注意：DDL 如果解析失败，ddl_dt 为 None，显示原始字符串
+        ddl_str = raw_ddl if raw_ddl else "-"
+        table.add_row(
+            idx, 
+            f"[{color_tag}]{ddl_str}[/]", 
+            icon, 
+            content_display
+        )
+
+    # 底部 "More..." 提示
+    if len(tips_list) > layout["max_rows"]:
+        rest = len(tips_list) - layout["max_rows"]
+        table.add_row("...", "...", "", f"[dim]... and {rest} more ...[/]")
 
     return Panel(
         table,
-        title=f"[{title_style}]{title}[/]",
+        title=f"[bold {border_color}]{title}[/]",
         title_align="left",
-        border_style=border_style,
+        border_style=f"bold {border_color}",
         box=box.ROUNDED,
-        width=UI_WIDTH,
+        width=layout["width"],
         expand=False
     )
 
 def draw_main_ui(client_obj, status_msg):
     clear_screen()
+    theme = UI_CONFIG["theme"]
+    layout = UI_CONFIG["layout"]
     
-    # === 1. 兼容性数据获取 (关键修改) ===
-    # 优先找 private_cache，找不到就找 local_cache (老版本数据)
-    if hasattr(client_obj, 'private_cache'):
-        data_private = client_obj.private_cache
-        data_group = getattr(client_obj, 'group_cache', [])
-        focus = getattr(client_obj, 'focus_mode', 0)
-        g_name = getattr(client_obj, 'current_group_name', 'None')
-    else:
-        # Fallback: 使用老版本 local_cache
-        data_private = getattr(client_obj, 'local_cache', [])
-        data_group = [] # 老版本还没有群组数据，先置空
-        focus = 0       # 强制聚焦在第一个框
-        g_name = "None"
+    # === 1. 数据准备 ===
+    all_tips = getattr(client_obj, 'local_cache', [])
+    private_list = [t for t in all_tips if t.get('type') == 'PRIVATE']
+    group_list = [t for t in all_tips if t.get('type') == 'GROUP']
+    
+    g_name = getattr(client_obj, 'current_group_name', 'None')
+    if g_name == 'None': g_name = "No Group"
 
     # === 2. 绘制 Header ===
     now_str = datetime.now().strftime('%H:%M')
-    focus_name = "PRIVATE" if focus == 0 else "GROUP"
+    user_name = getattr(client_obj, 'username', 'User') 
     
     header = Text()
-    header.append(" TIPS CLIENT ", style="bold white on blue")
-    header.append(f" User: {client_obj.current_user} ", style="bold blue")
-    header.append(f"| {now_str} | Focus: [{focus_name}]", style="dim")
+    header.append(" TIPS CLIENT ", style=f"{theme['header_fg']} on {theme['header_bg']}")
+    header.append(f" User: {user_name} ", style=theme['user_highlight'])
+    header.append(f"| {now_str}", style="dim")
     
     console.print(header)
-    console.print("")
+    console.print("") # 空行
 
-    # === 3. 绘制两个框 ===
-    
-    # 顶部框：显示 local_cache / private_cache
-    panel_p = create_list_panel(
-        "🏠 Tips List", 
-        data_private, 
-        is_focused=(focus == 0), 
-        border_color="blue"
-    )
-    console.print(panel_p)
+    # === 3. 绘制两个面板 ===
+    # 私人
+    console.print(create_list_panel(
+        "🏠 Private Tips", 
+        private_list, 
+        theme["border_private"]
+    ))
 
-    # 底部框：暂时显示为空 (等待你以后更新Client)
-    panel_g = create_list_panel(
+    # 群组
+    console.print(create_list_panel(
         f"👥 Group: {g_name}", 
-        data_group, 
-        is_focused=(focus == 1), 
-        border_color="yellow"
-    )
-    console.print(panel_g)
+        group_list, 
+        theme["border_group"]
+    ))
 
     # === 4. Footer ===
     console.print("")
-    console.print(f"[dim]{'-' * UI_WIDTH}[/]")
-    console.print(f"[bold yellow] 🔔 Status: {status_msg}[/]")
-    console.print(f"[dim]{'-' * UI_WIDTH}[/]")
+    console.print(f"[dim]{'-' * layout['width']}[/]")
     
-    # === 修复后的命令栏绘制 ===
-    cmd_text = Text()
-    cmd_text.append(" Command: ", style="dim")
+    # 状态栏处理
+    status_str = str(status_msg).replace('\n', ' | ')
+    if len(status_str) > layout['width'] - 15: 
+        status_str = status_str[:layout['width']-18] + "..."
     
-    # 定义一个内部小函数来拼装命令，既整洁又不出错
-    def add_cmd(key, desc, has_sep=True):
-        cmd_text.append("[", style="bold white")
-        cmd_text.append(key, style="bold white")
-        cmd_text.append("]", style="bold white")
-        cmd_text.append(desc, style="dim")
-        if has_sep:
-            cmd_text.append(" | ", style="dim")
-
-    add_cmd("TAB", "Focus")
-    add_cmd("a", "dd")
-    add_cmd("d", "el")
-    add_cmd("c", "hange")
-    add_cmd("r", "efresh")
-    add_cmd(":", "Cmd")
-    add_cmd("q", "uit", has_sep=False) # 最后一个不加竖线
+    console.print(f"[{theme['status_urgent']}] 🔔 Status: {status_str}[/]")
+    console.print(f"[dim]{'-' * layout['width']}[/]")
     
-    console.print(cmd_text)
+    console.print("[dim] Commands: [bold]add[/] <txt> | [bold]fin[/] <id> | [bold]sync[/] | [bold]q[/]uit[/]")

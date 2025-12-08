@@ -2,12 +2,11 @@
 import sys
 import readline
 from core.client import TipsClient
+from core.CommandHandler import CommandHandler # 引入刚才写的处理器
 from ui import renderer, style
 from getpass import getpass
 
-
 def main():
-    # 1. 初始化
     client = TipsClient()
     in_tui_mode = False 
 
@@ -27,69 +26,49 @@ def main():
             print(f"\nLogin Failed: {msg}")
             return
 
-        # --- TUI 阶段 ---
+        # --- TUI 初始化 ---
         sys.stdout.write(style.Term.ALT_SCREEN_ON)
         in_tui_mode = True  
+        client.fetch_tips() # 初始拉取
         
-        status_msg = f"Welcome {u}! Fetching..."
-        msg, _ = client.fetch_tips() 
-        status_msg = msg
-        
+        # 初始化处理器
+        handler = CommandHandler(client, renderer)
+
+        COMMAND_MAP = {
+            'r': handler.cmd_refresh,
+            'a': handler.cmd_add_tip,
+            'd': handler.cmd_delete_tip,
+            'c': handler.cmd_change_state,
+            'create_group': handler.create_group,
+            'join_group': handler.join_group,
+            'list_my_groups': handler.list_groups,
+            'get_group_info': handler.get_group_info,
+            'get_my_group': handler.get_my_group,
+            'enter': handler.enter_group,
+        }
+
         while True:
-            renderer.draw_main_ui(client, status_msg)
+            # 1. 绘制界面
+            handler.refresh_ui()
             
-            cmd = input(" : ").strip().lower()
-            
-            if cmd == 'q':
+            # 2. 获取输入
+            try:
+                raw_cmd = input(" > ").strip().lower()
+            except EOFError:
                 break
-            elif cmd == 'r':
-                status_msg = "Refreshing..."
-                renderer.draw_main_ui(client, status_msg)
-                msg, _ = client.fetch_tips()
-                status_msg = msg
-            elif cmd == 'a':
-                c = input("   > Content: ")
-                d = input("   > DDL: ")
-                msg, refresh = client.add_tip(c, d)
-                status_msg = msg
-                if refresh: client.fetch_tips()
-            elif cmd == 'd':
-                idx = input("   > Delete Indexes (e.g., 1,2,5):")
-                msg, refresh = client.delete_tips(idx)
-                status_msg = msg
-                if refresh: client.fetch_tips()
-            elif cmd == 'c':
-                idx = input("   > Change tips state Indexes (e.g., 1,2,5): ")
-                msg, refresh = client.change_tip_state(idx)
-                status_msg = msg
-                if refresh: client.fetch_tips()
-            elif cmd == 'create_group':
-                name = input("   > Group Name: ").strip()
-                msg, _ = client.create_group(name)
-                status_msg = msg
-            elif cmd == 'join_group':
-                gid = input("   > Group invite code: ").strip()
-                msg, _ = client.join_group(gid)
-                status_msg = msg
-            elif cmd == 'list_my_groups':
-                msg, _ = client.list_my_groups()
-                status_msg = msg
-            elif cmd == 'get_group_info':
-                gid = input("   > Group ID: ").strip()
-                msg, _ = client.get_group_info(gid)
-                status_msg = msg
-            elif cmd == 'set_group_admin':
-                gid = input("   > Group ID: ").strip()
-                user_ids = input("   > New Admin id(e.g.1,2,3): ")
-                msg, _ = client.set_group_admin(gid, user_ids)
-                status_msg = msg
+            
+            if not raw_cmd: continue
+            if raw_cmd == 'q': break # 退出单独处理
+
+            # 3. 【一键分发】查表执行
+            if raw_cmd in COMMAND_MAP:
+                func = COMMAND_MAP[raw_cmd]
+                func() # 执行对应的函数
+            else:
+                handler.status_msg = f"Unknown command: {raw_cmd}"
 
     except KeyboardInterrupt:
-        if not in_tui_mode:
-            print("\n\n[!] Login cancelled by user.")
-        else:
-            pass
-
+        if not in_tui_mode: print("\n[!] Cancelled.")
     finally:
         if in_tui_mode:
             sys.stdout.write(style.Term.ALT_SCREEN_OFF)
