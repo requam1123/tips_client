@@ -3,6 +3,7 @@
 # 定义颜色
 GREEN='\033[0;32m'
 RED='\033[0;31m'
+YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 
 # ================= 配置区 =================
@@ -33,11 +34,12 @@ if [[ $PY_VER_STR =~ Python\ ([0-9]+)\.([0-9]+) ]]; then
         echo -e "${RED}错误: Python 版本过低！${NC}"
         echo "当前版本: $PY_VER_STR"
         echo "最低要求: Python $MIN_VERSION_MAJOR.$MIN_VERSION_MINOR"
+        echo "请使用sudo apt install python3.10 python3.10-venv python3.10-dev安装合适版本，或参考：https://tecadmin.net/install-python-3-10-ubuntu/"
         exit 1
     fi
     echo "Python 版本检查通过: $PY_VER_STR"
 else
-    echo -e "${RED}警告: 无法识别 Python 版本，跳过版本检查。${NC}"
+    echo -e "${RED}警告: 无法识别 Python 版本，跳过版本检查。请自行检查是否符合环境要求。${NC}"
 fi
 
 # 3. 检查是否安装了 python3-venv 模块 (解决你之前遇到的空壳环境问题)
@@ -47,6 +49,15 @@ if ! python3 -m venv --help > /dev/null 2>&1; then
     echo "这在 Ubuntu/Debian/WSL 上很常见。请运行以下命令修复："
     echo ""
     echo "    sudo apt update && sudo apt install -y python3-venv"
+    echo ""
+    exit 1
+fi
+
+if ! python3 -m pip --version > /dev/null 2>&1; then
+    echo -e "${RED}错误: 您的 Python 缺少 'pip' 模块。${NC}"
+    echo "请运行以下命令安装 pip："
+    echo ""
+    echo "    sudo apt update && sudo apt install -y python3-pip"
     echo ""
     exit 1
 fi
@@ -83,7 +94,7 @@ cat << EOF > tips_launcher.temp
 # 进入项目目录
 cd "$PROJECT_DIR"
 # 使用虚拟环境中的 Python 运行 main.py
-"$PROJECT_DIR/venv/bin/python" main.py "\$@"
+python3 main.py "\$@"
 EOF
 
 # 移动并赋予权限
@@ -94,5 +105,8 @@ sudo chmod +x $LAUNCHER_PATH
 echo -e "${GREEN}[5/5] 安装完成！${NC}"
 echo "----------------------------------------"
 echo "环境检查: Python $VER_MAJOR.$VER_MINOR (OK)"
+if grep -qiE "(microsoft|wsl)" /proc/version; then
+    echo "${YELLOW}WSL Founded: 您极可能正在使用 WSL 。请自行确认 Python3-venv 已安装。若未安装，请安装 Python3-venv 后重新运行本脚本。${NC}"
+fi
 echo "现在你可以在任意地方输入 'tips' 来使用了！"
 echo "试一试: tips --help"
