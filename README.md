@@ -21,3 +21,6 @@ chmod +x install.sh
 现在tips就集成到你的系统中了，可以使用 `tips` 命令来启动它。
 在使用之前，你需要先注册一个账号，可以使用 `tips --signup` 命令来注册。
 注册成功后，你就可以使用 `tips` 命令来启动客户端，登录后即可使用各种功能。
+
+## demo
+![demo](./docs/demo.png)
