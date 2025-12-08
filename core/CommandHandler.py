@@ -14,13 +14,13 @@ class CommandHandler:
 
     # --- 基础命令处理函数 ---
     
-    def cmd_refresh(self):
+    def refresh(self):
         self.status_msg = "Refreshing..."
-        self.refresh_ui() # 先给个反馈
+        self.refresh_ui() 
         msg, _ = self.client.fetch_tips()
         self.status_msg = msg
 
-    def cmd_add_tip(self):
+    def add_tip(self):
         print("\n[Add Tip]")
         c = input("   Content: ")
         d = input("   DDL (YY-MM-DD HH:MM): ")
@@ -30,13 +30,13 @@ class CommandHandler:
         self.status_msg = msg
         if refresh: self.client.fetch_tips()
 
-    def cmd_delete_tip(self):
+    def delete_tip(self):
         idx = input("\n[Delete] Indexes (e.g. 1,2): ")
         msg, refresh = self.client.delete_tips(idx)
         self.status_msg = msg
         if refresh: self.client.fetch_tips()
 
-    def cmd_change_state(self):
+    def change_state(self):
         idx = input("\n[Change State] Indexes (e.g. 1,2): ")
         msg, refresh = self.client.change_tip_state(idx)
         self.status_msg = msg
@@ -67,6 +67,12 @@ class CommandHandler:
         sys.stdout.write(style.Term.ALT_SCREEN_ON)
         self.status_msg = "Group list checked."
 
+    def set_group_admin(self):
+        gid = input("   > Group ID to set admin: ").strip()
+        uid = input("   > User ID to promote: ").strip()
+        msg, _ = self.client.set_group_admin(gid, uid)
+        self.status_msg = msg
+
     def enter_group(self):
         gid = input("   > Group ID to enter: ").strip()
         msg, refresh = self.client.enter_group(gid)
@@ -81,4 +87,27 @@ class CommandHandler:
     def get_my_group(self):
         msg, _ = self.client.list_my_groups()
         self.status_msg = msg
+    
+    def show_help(self):
+        help_text = """
+Available Commands:
+    help              : Show this help message
+    a                 : Add a new tip
+    d                 : Delete tip(s) by index
+    c                 : Change state of tip(s) by index
+    r                 : Refresh the tip list
+    q                 : Quit the application
+    create_group      : Create a new group
+    join_group        : Join a group 
+    list_my_groups    : List all groups you have joined
+    get_group_info    : Get information about a specific group
+    get_my_group      : List your groups
+    set_group_admin   : Set a user as admin in a group
+    enter             : Enter a specific group
+"""
+        sys.stdout.write(style.Term.ALT_SCREEN_OFF)
+        print(help_text)
+        input("Press Enter to return...")
+        sys.stdout.write(style.Term.ALT_SCREEN_ON)
+        self.status_msg = "Help displayed."
 

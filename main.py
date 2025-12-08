@@ -35,16 +35,18 @@ def main():
         handler = CommandHandler(client, renderer)
 
         COMMAND_MAP = {
-            'r': handler.cmd_refresh,
-            'a': handler.cmd_add_tip,
-            'd': handler.cmd_delete_tip,
-            'c': handler.cmd_change_state,
+            'r': handler.refresh,
+            'a': handler.add_tip,
+            'd': handler.delete_tip,
+            'c': handler.change_state,
             'create_group': handler.create_group,
             'join_group': handler.join_group,
             'list_my_groups': handler.list_groups,
             'get_group_info': handler.get_group_info,
             'get_my_group': handler.get_my_group,
+            'set_group_admin': handler.set_group_admin,
             'enter': handler.enter_group,
+            'help' : handler.show_help,
         }
 
         while True:

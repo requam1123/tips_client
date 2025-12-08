@@ -1,0 +1,2 @@
+cryptography ==42.0.5
+rich ==14.2.0

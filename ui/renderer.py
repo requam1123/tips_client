@@ -1,4 +1,5 @@
 import sys
+import os
 from datetime import datetime, timedelta
 from rich.console import Console
 from rich.table import Table
@@ -60,7 +61,9 @@ console = Console()
 # =============================================================================
 
 def clear_screen():
-    console.clear()
+    # Windows 用 cls，macOS/Linux 用 clear
+    command = 'cls' if os.name == 'nt' else 'clear'
+    os.system(command)
 
 def parse_ddl(raw_ddl):
     """尝试解析时间格式，返回 datetime 对象或 None"""
@@ -204,54 +207,96 @@ def create_list_panel(title, tips_list, border_color):
 
 def draw_main_ui(client_obj, status_msg):
     clear_screen()
+    
+    # 快捷引用配置
     theme = UI_CONFIG["theme"]
     layout = UI_CONFIG["layout"]
     
-    # === 1. 数据准备 ===
+    # =========================================================
+    # 1. 数据准备 & 过滤
+    # =========================================================
     all_tips = getattr(client_obj, 'local_cache', [])
+    
+    # --- 1.1 私人便签 (永远显示) ---
     private_list = [t for t in all_tips if t.get('type') == 'PRIVATE']
-    group_list = [t for t in all_tips if t.get('type') == 'GROUP']
-    
-    g_name = getattr(client_obj, 'current_group_name', 'None')
-    if g_name == 'None': g_name = "No Group"
 
-    # === 2. 绘制 Header ===
-    now_str = datetime.now().strftime('%H:%M')
-    user_name = getattr(client_obj, 'username', 'User') 
+    # --- 1.2 群组便签 (根据 current_group_id 过滤) ---
+    current_gid = getattr(client_obj, 'current_group_id', None)
     
+    group_list = []
+    # 只有当用户确实进入了某个群组 (ID不为None) 时，才去筛选
+    if current_gid is not None:
+        for t in all_tips:
+            if t.get('type') == 'GROUP':
+                # 强转字符串比较，防止 int/str 类型不一致导致匹配失败
+                if str(t.get('group_id')) == str(current_gid):
+                    group_list.append(t)
+
+    # =========================================================
+    # 2. 智能修正群组名称 
+    # =========================================================
+    g_name = getattr(client_obj, 'current_group_name', 'None')
+    
+    if current_gid is None:
+        g_name = "No Group Selected"
+    elif group_list and (g_name in ['None', 'Unknown', 'Unknown Group']):
+        # 从数据里“偷”出真正的群名
+        first_real_name = group_list[0].get('group_name')
+        if first_real_name:
+            g_name = first_real_name
+            # (可选) 顺手帮 client 更新一下，下次渲染就不用再偷了
+            if hasattr(client_obj, 'current_group_name'):
+                client_obj.current_group_name = g_name
+    elif g_name == 'None':
+        # 如果既没名字，列表也是空的
+        g_name = f"Group ID: {current_gid}"
+
+    # =========================================================
+    # 3. 绘制 Header
+    # =========================================================
+    now_str = datetime.now().strftime('%H:%M')
+    user_name = getattr(client_obj, 'current_user', 'User') 
+    user_id = getattr(client_obj, 'current_user_id', 'ID')
     header = Text()
     header.append(" TIPS CLIENT ", style=f"{theme['header_fg']} on {theme['header_bg']}")
-    header.append(f" User: {user_name} ", style=theme['user_highlight'])
+    header.append(f" User: {user_name}#ID:{user_id} ", style=theme['user_highlight'])
     header.append(f"| {now_str}", style="dim")
     
     console.print(header)
     console.print("") # 空行
 
-    # === 3. 绘制两个面板 ===
-    # 私人
+    # =========================================================
+    # 4. 绘制两个面板
+    # =========================================================
+    # 私人面板
     console.print(create_list_panel(
         "🏠 Private Tips", 
         private_list, 
         theme["border_private"]
     ))
 
-    # 群组
+    # 群组面板
     console.print(create_list_panel(
         f"👥 Group: {g_name}", 
         group_list, 
         theme["border_group"]
     ))
 
-    # === 4. Footer ===
+    # =========================================================
+    # 5. Footer & Status
+    # =========================================================
     console.print("")
     console.print(f"[dim]{'-' * layout['width']}[/]")
     
-    # 状态栏处理
+    # --- 状态栏防溢出处理 ---
     status_str = str(status_msg).replace('\n', ' | ')
-    if len(status_str) > layout['width'] - 15: 
-        status_str = status_str[:layout['width']-18] + "..."
+    # 预留一点空间给 "Status: " 字样
+    # limit_len = layout['width'] - 15 
+    
+    # if len(status_str) > limit_len: 
+    #     status_str = status_str[:limit_len-3] + "..."
     
     console.print(f"[{theme['status_urgent']}] 🔔 Status: {status_str}[/]")
     console.print(f"[dim]{'-' * layout['width']}[/]")
-    
-    console.print("[dim] Commands: [bold]add[/] <txt> | [bold]fin[/] <id> | [bold]sync[/] | [bold]q[/]uit[/]")
+
+    console.print("[bold white] Command : help for help ; r for refresh ; q to quit [/bold white]")

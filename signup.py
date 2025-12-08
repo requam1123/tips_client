@@ -1,6 +1,3 @@
-import requests
-from config import SERVER_URL
-from core.crypto import encrypt_password
 from getpass import getpass
 from core.client import TipsClient
 
