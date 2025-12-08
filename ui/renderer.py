@@ -7,6 +7,8 @@ from rich.panel import Panel
 from rich import box
 from rich.text import Text
 
+VERSION = "1.0.0"
+
 # =============================================================================
 # 1. 样式配置区 (UI_CONFIG) - 想改样式？改这里！
 # =============================================================================
@@ -260,6 +262,7 @@ def draw_main_ui(client_obj, status_msg):
     header = Text()
     header.append(" TIPS CLIENT ", style=f"{theme['header_fg']} on {theme['header_bg']}")
     header.append(f" User: {user_name}#ID:{user_id} ", style=theme['user_highlight'])
+    header.append(f" | v{VERSION} ", style="dim")
     header.append(f"| {now_str}", style="dim")
     
     console.print(header)

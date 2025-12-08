@@ -1,5 +1,5 @@
 import requests
-from config import SERVER_URL
+from config import SERVER_URL, TNTBOT_AUTH_URL
 from datetime import datetime
 from core.crypto import encrypt_password
 
@@ -21,7 +21,7 @@ class TipsClient:
     def login(self, username, password):
         try:    
             resp = self.session.get(f"{SERVER_URL}/public_key/", timeout=5)
-            if resp.status_code != 200: return False, "Server connect error"
+            if resp.status_code != 200: return False, f"Server connect error {resp.status_code}"
             pem_key = resp.json()['public_key'].encode('utf-8')
         except Exception as e:
             return False, f"Network error: {e}"
@@ -42,7 +42,7 @@ class TipsClient:
     def sign_up(self, username, password, invite_code):
         try:    
             resp = self.session.get(f"{SERVER_URL}/public_key/", timeout=5)
-            if resp.status_code != 200: return False, "Server connect error"
+            if resp.status_code != 200: return False, f"Server connect error {resp.status_code}"
             pem_key = resp.json()['public_key'].encode('utf-8')
         except Exception as e:
             return False, f"Network error: {e}"
@@ -296,7 +296,34 @@ class TipsClient:
             
         except ValueError:
             return "Invalid Group ID", False
-
+        
+    def auth_qq(self, qq_number: str):
+        """连接 TNTBot 帐号以关联 DDL """
+        try:
+            resp = self.session.post(f"{TNTBOT_AUTH_URL}/auth", json={
+                "qq_number": qq_number,
+                "quam_username": self.current_user,
+                "action": "l"
+            })
+            if resp.status_code == 200:
+                return "TNTBot account linked successfully!", True
+            return f"Failed: {resp.text}", False
+        except Exception as e:
+            return f"Error: {e}", False
+    
+    def unauth_qq(self):
+        """断开 TNTBot 关联"""
+        try:
+            resp = self.session.post(f"{TNTBOT_AUTH_URL}/auth", json={
+                "quam_username": self.current_user,
+                "action": "u"
+            })
+            if resp.status_code == 200:
+                return "TNTBot account unlinked successfully!", True
+            return f"Failed: {resp.text}", False
+        except Exception as e:
+            return f"Error: {e}", False
+    
     # def exit_group(self):
     #     """Set context back to private"""
     #     self.current_group_id = None

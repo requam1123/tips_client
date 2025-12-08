@@ -2,12 +2,13 @@
 import sys
 from ui import style
 from core.client import TipsClient
+from config import VERSION
 
 class CommandHandler:
     def __init__(self, client : TipsClient, renderer):
         self.client = client
         self.renderer = renderer
-        self.status_msg = f"Welcome {client.current_user}!"
+        self.status_msg = f"Welcome {client.current_user}! v{VERSION}"
 
     def refresh_ui(self):
         self.renderer.draw_main_ui(self.client, self.status_msg)
@@ -88,6 +89,25 @@ class CommandHandler:
         msg, _ = self.client.list_my_groups()
         self.status_msg = msg
     
+    # -- TNTBot 认证命令 ---
+    def tntauth(self):
+        qqnumber = input("   > QQ Number: ").strip()
+        msg, _ = self.client.auth_qq(qqnumber)
+        self.status_msg = msg
+    
+    def tntunauth(self):
+        msg, _ = self.client.unauth_qq()
+        self.status_msg = msg
+        
+    # -- 自动登录命令 ---
+    def change_auto_login(self):
+        msg, _ = self.client.toggle_auto_login()
+        self.status_msg = msg
+    
+    def del_auto_login(self):
+        msg, _ = self.client.delete_auto_login()
+        self.status_msg = msg
+    
     def show_help(self):
         help_text = """
 Available Commands:
@@ -103,6 +123,8 @@ Available Commands:
     get_my_group      : 列出我加入的所有群组
     set_group_admin   : 设置管理员（需要你是群主）
     enter             : 切换到某个群组
+    auth(NoImptd)     : 进行 TNTBot 账号认证
+    uauth(NoImptd)    : 取消 TNTBot 账号认证
 """
         sys.stdout.write(style.Term.ALT_SCREEN_OFF)
         print(help_text)
