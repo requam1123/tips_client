@@ -86,8 +86,6 @@ class TipsClient:
                         'is_done': tip['is_done'],
                         'type': 'PRIVATE',
                         'completed_members': [],
-                        
-                        # 【建议补充】虽然是 private，但也显式给个 None，保持结构整齐
                         'group_id': None 
                     })
 
@@ -100,7 +98,6 @@ class TipsClient:
                         'ddl': tip['ddl'],
                         'is_done': tip['is_done'], 
                         'type': 'GROUP',
-                        # 这里获取 group_id 很关键，UI 过滤要用
                         'group_id' : tip.get('group_id'),
                         'group_name' : tip.get('group_name', 'Unknown'),
                         'owner': tip.get('owner_name', 'Unknown'),
@@ -110,24 +107,16 @@ class TipsClient:
                 self.local_cache.sort(key=lambda x: x['index'])
 
                 # ========================================================
-                # 3. 处理当前上下文 (Group Context) - 修复重点
+                # 3. 处理当前上下文 (Group Context) 
                 # ========================================================
                 
                 # 如果还没有初始化 group_id，就用后端给的默认值
                 if not hasattr(self, 'current_group_id') or self.current_group_id is None:
                     self.current_group_id = data.get('group_id')
                 
-                # 【关键修复】更新 group_name
-                # 后端最外层通常没返回 group_name，所以 data.get('group_name') 可能是空的。
-                # 我们需要去 cache 里的群组便签中 "偷" 一个名字出来。
-                
                 if self.current_group_id:
-                    # 默认显示 ID，以防列表为空找不到名字
                     target_name = f"Group {self.current_group_id}"
-                    
-                    # 尝试从刚才处理好的 local_cache 里找这个群的名字
                     for item in self.local_cache:
-                        # 注意类型转换：有些时候 id 是 int 有些是 str，转 str 比较最稳
                         if item.get('type') == 'GROUP' and str(item.get('group_id')) == str(self.current_group_id):
                             target_name = item.get('group_name', target_name)
                             break
@@ -147,8 +136,6 @@ class TipsClient:
             return "Invalid date format (YY-MM-DD HH:MM).", False
         
         try:
-            # If you want to support adding to group, you need to set self.current_group_id
-            # For now, this defaults to private (group_id=None)
             payload = {
                 "content": content, 
                 "ddl": ddl if ddl else None,
@@ -293,35 +280,24 @@ class TipsClient:
             gid = int(group_id)
             self.current_group_id = gid
             
-            # === 修改处 START ===
-            # 1. 在查找名字之前，必须先去服务器把这个组的数据拉下来！
-            # 假设你有一个方法叫 fetch_tips() 用来更新 self.local_cache
-            # 如果没有，你需要把那个 requests.get(...) 的逻辑加在这里
             try:
-                self.fetch_tips() # <--- 关键：先刷新数据，填满 local_cache
+                self.fetch_tips() 
             except Exception as e:
                 # 如果拉取失败（比如没网，或者组不存在），还是会让它切过去，但名字是 Unknown
                 pass 
-            # === 修改处 END ===
 
-            # 2. 现在缓存里有新组的数据了，再遍历就能找到了
             found_name = "Unknown Group"
             for t in self.local_cache:
-                # 这里的逻辑是对的，只要 cache 是新的
                 if t.get('group_id') == gid and t.get('group_name'):
                     found_name = t['group_name']
                     break
-            
-            # 如果这是一个空组（没有任何便签），上述循环还是找不到名字。
-            # 这种情况下，更稳健的做法是单独请求 GET /groups/{id} 接口（如果有的话）。
-            
             self.current_group_name = found_name
             return f"Context switched to Group {gid} ({found_name})", True
             
         except ValueError:
             return "Invalid Group ID", False
 
-    def exit_group(self):
-        """Set context back to private"""
-        self.current_group_id = None
-        return "Context switched to Private"
+    # def exit_group(self):
+    #     """Set context back to private"""
+    #     self.current_group_id = None
+    #     return "Context switched to Private"

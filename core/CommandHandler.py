@@ -91,19 +91,18 @@ class CommandHandler:
     def show_help(self):
         help_text = """
 Available Commands:
-    help              : Show this help message
-    a                 : Add a new tip
-    d                 : Delete tip(s) by index
-    c                 : Change state of tip(s) by index
-    r                 : Refresh the tip list
-    q                 : Quit the application
-    create_group      : Create a new group
-    join_group        : Join a group 
-    list_my_groups    : List all groups you have joined
-    get_group_info    : Get information about a specific group
-    get_my_group      : List your groups
-    set_group_admin   : Set a user as admin in a group
-    enter             : Enter a specific group
+    help              : 打开指令笔记本
+    a                 : 新增tips
+    d                 : 删除tips
+    c                 : 修改tips状态（完成/未完成）
+    r                 : 刷新界面
+    q                 : 退出程序
+    create_group      : 创造一个新群组
+    join_group        : 加入一个群组
+    get_group_info    : 展示某个群组的成员信息
+    get_my_group      : 列出我加入的所有群组
+    set_group_admin   : 设置管理员（需要你是群主）
+    enter             : 切换到某个群组
 """
         sys.stdout.write(style.Term.ALT_SCREEN_OFF)
         print(help_text)

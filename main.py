@@ -1,12 +1,20 @@
 # main.py
 import sys
 import readline
+import signup
 from core.client import TipsClient
 from core.CommandHandler import CommandHandler # 引入刚才写的处理器
 from ui import renderer, style
 from getpass import getpass
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == '--signup':
+        try:
+            signup.signup() 
+        except KeyboardInterrupt:
+            print("\n已取消注册。")
+        return 
+    
     client = TipsClient()
     in_tui_mode = False 
 
