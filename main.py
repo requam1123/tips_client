@@ -20,20 +20,28 @@ def main():
 
     try:
         # --- 登录阶段 ---
-        print("--- Login ---")
-        u = input("User: ").strip()
-        if not u: 
-            print("Empty username. Exiting.")
-            return
-        p = getpass("Pass: ").strip()
-        if u == "admin":
-            print("Admin 你妈的逼")
-            return
-        success, msg = client.login(u, p)
-        if not success:
-            print(f"\nLogin Failed: {msg}")
-            return
-
+        print("Checking existing session...")
+        auto_success, auto_msg = client.try_auto_login()
+        
+        if auto_success:
+            print(f"✅ {auto_msg}")
+            # 自动登录成功，直接往下走，不用输入账号密码了
+        else:
+            print(f"⚠️ {auto_msg}. Please login manually.")
+            print("--- Login ---")
+            u = input("User: ").strip()
+            if not u: 
+                print("Empty username. Exiting.")
+                return
+            p = getpass("Pass: ").strip()
+            if u == "admin":
+                print("Admin 你妈的逼")
+                return
+            success, msg = client.login(u, p)
+            if not success:
+                print(f"\nLogin Failed: {msg}")
+                return
+        
         # --- TUI 初始化 ---
         sys.stdout.write(style.Term.ALT_SCREEN_ON)
         in_tui_mode = True  

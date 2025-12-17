@@ -8,7 +8,7 @@ from rich import box
 from rich.text import Text
 
 # =============================================================================
-# 1. 样式配置区 (UI_CONFIG) - 想改样式？改这里！
+# 1. 样式配置区 (UI_CONFIG) 
 # =============================================================================
 UI_CONFIG = {
     # --- 颜色主题 ---
@@ -46,7 +46,7 @@ UI_CONFIG = {
     # --- 布局参数 ---
     "layout": {
         "width": 80,            # 整体宽度
-        "max_rows": 8,          # 面板最大显示行数
+        "max_rows": 8,          # 面板最大显示行数(暂时不用)
         "col_id_width": 4,      # ID列宽度
         "col_ddl_width": 16,    # 时间列宽度
         "col_done_width": 4,    # 状态列宽度
@@ -110,7 +110,7 @@ def format_group_content(item):
     content = item.get('content', '')
     owner = item.get('owner', 'Unknown')
     
-    # 1. 拼装第一行：[Alice]: 做实验
+    # 1. 拼装第一行：发送者 + 内容
     sender_style = UI_CONFIG['theme']['content_sender']
     display_text = f"[{sender_style}]{owner}[/]: {content}"
 
@@ -118,9 +118,6 @@ def format_group_content(item):
     comps = item.get('completed_members', [])
     if comps:
         joined = ", ".join(comps)
-        # 简单截断防止太长
-        if len(joined) > 30:
-            joined = joined[:28] + "..."
         
         meta_style = UI_CONFIG['theme']['content_meta']
         display_text += f"\n[{meta_style}]  ↳ Done: {joined}[/]"
@@ -156,7 +153,7 @@ def create_list_panel(title, tips_list, border_color):
         return Panel(table, title=f"[bold {border_color}]{title}[/]", border_style=f"bold {border_color}", box=box.ROUNDED, width=layout["width"])
 
     # 遍历数据
-    for item in tips_list[:layout["max_rows"]]:
+    for item in tips_list:
         # A. 准备数据
         raw_ddl = item.get('ddl')
         is_done = item.get('is_done', False)
@@ -173,9 +170,8 @@ def create_list_panel(title, tips_list, border_color):
             content_display = format_group_content(item)
         else:
             # 私人内容简单截断
-            c = item.get('content', '')
-            if len(c) > 38: c = c[:35] + "..."
-            content_display = c
+            content_display = item.get('content', '')
+
 
         # D. 准备图标
         icon = icons["done"] if is_done else icons["todo"]
@@ -189,11 +185,6 @@ def create_list_panel(title, tips_list, border_color):
             icon, 
             content_display
         )
-
-    # 底部 "More..." 提示
-    if len(tips_list) > layout["max_rows"]:
-        rest = len(tips_list) - layout["max_rows"]
-        table.add_row("...", "...", "", f"[dim]... and {rest} more ...[/]")
 
     return Panel(
         table,
@@ -224,7 +215,7 @@ def draw_main_ui(client_obj, status_msg):
     current_gid = getattr(client_obj, 'current_group_id', None)
     
     group_list = []
-    # 只有当用户确实进入了某个群组 (ID不为None) 时，才去筛选
+    # 只有当用户确实进入了某个群组时，才去筛选
     if current_gid is not None:
         for t in all_tips:
             if t.get('type') == 'GROUP':
@@ -233,14 +224,14 @@ def draw_main_ui(client_obj, status_msg):
                     group_list.append(t)
 
     # =========================================================
-    # 2. 智能修正群组名称 
+    # 2. 修正群组名称 
     # =========================================================
     g_name = getattr(client_obj, 'current_group_name', 'None')
     
     if current_gid is None:
         g_name = "No Group Selected"
     elif group_list and (g_name in ['None', 'Unknown', 'Unknown Group']):
-        # 从数据里“偷”出真正的群名
+        # 从数据里得到真正的群名
         first_real_name = group_list[0].get('group_name')
         if first_real_name:
             g_name = first_real_name

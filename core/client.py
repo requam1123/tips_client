@@ -1,7 +1,9 @@
 import requests
-from config import SERVER_URL
+from config import SERVER_URL, LOGIN_SESSION_CACHE_PATH
 from datetime import datetime
 from core.crypto import encrypt_password
+import json
+import os
 
 class TipsClient:
     def __init__(self):
@@ -34,6 +36,8 @@ class TipsClient:
             if resp.status_code == 200:
                 self.current_user = username
                 self.current_user_id = resp.json().get("user_id")
+
+                self.save_session()
                 return True, "Login Success"
             return False, resp.text
         except Exception as e:
@@ -59,6 +63,50 @@ class TipsClient:
             return False, resp.text
         except Exception as e:
             return False, f"Sign Up Error: {e}"
+        
+
+    def save_session(self):
+        try:
+            data = {
+                "username" : self.current_user,
+                "user_id" : self.current_user_id,
+                "cookies" : self.session.cookies.get_dict()
+            }
+            with open(LOGIN_SESSION_CACHE_PATH, "w") as f:
+                json.dump(data, f)
+        except Exception as e:
+            print(f"Save session error: {e}")
+    
+    def clear_session(self):
+        if os.path.exists(LOGIN_SESSION_CACHE_PATH):
+            os.remove(LOGIN_SESSION_CACHE_PATH)
+    
+    def try_auto_login(self):
+        """尝试从本地文件自动登录"""
+        if not os.path.exists(LOGIN_SESSION_CACHE_PATH):
+            return False, "No session file"
+        
+        try:
+            with open(LOGIN_SESSION_CACHE_PATH, "r") as f:
+                data = json.load(f)
+                
+            cached_user = data.get("username")
+            cookies = data.get("cookies", {})
+            self.session.cookies.update(cookies)
+            
+            resp = self.session.get(f"{SERVER_URL}/groups/my")
+            
+            if resp.status_code == 200:
+                self.current_user = cached_user
+                self.current_user_id = data.get("user_id")
+                return True, f"Auto login as {cached_user}"
+            else:
+                self.clear_session() 
+                return False, "Session expired"
+                
+        except Exception as e:
+            self.clear_session()
+            return False, f"Auto login error: {e}"
 
     def fetch_tips(self):
         """
